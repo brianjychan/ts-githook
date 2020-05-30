@@ -1,0 +1,117 @@
+#!/bin/bash
+: <<'comment_delimiter'
+This script compiles TS for frontend and backend, and checks for errors. 
+Note this checks the entire current working tree, which could cause:
+False positives: if you're only pushing changes to a subset of files, 
+but uncommited files have warnings.
+False negatives: if you fix errors, but haven't committed the changes.
+comment_delimiter
+
+echo
+echo "---Running pre-push script---"
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+printf "\n"
+
+# Compile TS on frontend
+echo "--Compiling typescript on frontend--"
+# Assume the `src` is in the root
+# Use `--noUnusedLocals true` to output an error (but keep as warning during dev)
+tscFrontendOutput=`$PWD/node_modules/.bin/tsc --noUnusedLocals true`
+tscFrontendExitCode=$?
+
+# Report errors
+if [ $tscFrontendExitCode = 0 ]
+then
+    echo "Typescript compilation for frontend succeeded"
+else
+    printf "$tscFrontendOutput"
+    printf "\n"
+    printf "\n"
+    echo "Typescript compilation for frontend failed"
+    echo
+    exit 1
+fi
+printf "\n"
+
+# Compile TS on backend
+echo "--Running tslint on backend--"
+tsLintOutput=`cd functions && ./node_modules/.bin/tslint --project tsconfig.json `
+tsLintExitCode=$?
+
+# Report errors
+if [ $tsLintExitCode = 0 ]
+then
+    echo "TSLint for backend succeeded"
+else
+    printf "$tsLintOutput"
+    printf "\n"
+    printf "\n"
+    echo "TSLint for backend failed"
+    echo
+    exit 1
+fi
+printf "\n"
+
+# Output tsc backend results
+echo "--Compiling typescript on backend--"
+# TODO: Change `functions` to the name of your backend dir
+# cd to the root dir for the backend
+# Use `--noUnusedLocals true` to output an error (but keep as warning during dev)
+tscBackendOutput=`cd functions && ./node_modules/.bin/tsc --noUnusedLocals true`
+tscBackendExitCode=$?
+
+# Report errors
+if [ $tscBackendExitCode = 0 ]
+then
+    echo "Typescript compilation for backend succeeded"
+else
+    printf "$tscBackendOutput"
+    printf "\n"
+    printf "\n"
+    echo "Typescript compilation for backend failed"
+    echo
+    exit 1
+fi
+
+printf "\n"
+
+
+# Run npm test
+echo "--Running npm test--"
+testOutput=`npm run test -- --watchAll=false`
+testOutputCode=$?
+printf "\n"
+
+# Report errors
+if [ $testOutputCode = 0 ]
+then
+    echo "npm run test succeeded"
+else
+    echo "npm run test failed"
+    echo
+    exit 1
+fi
+printf "\n"
+
+# Show warning if pushing to master
+protected_branch='master'
+current_branch=$(git symbolic-ref HEAD | sed -e 's,.*/\(.*\),\1,')
+if [ $protected_branch = $current_branch ]
+then
+    echo "--Double checking push to master--"
+    read -p "You're about to push master, is that what you intended? [y|n] " -n 1 -r < /dev/tty
+    echo
+    if ! echo $REPLY | grep -E '^[Yy]$' > /dev/null
+    then
+        exit 1
+    fi
+   
+else
+    :
+fi
+printf "\n"
+
+# Tests completed!
+echo "---pre-push tests finished---"
+printf "\n"
+exit 0
